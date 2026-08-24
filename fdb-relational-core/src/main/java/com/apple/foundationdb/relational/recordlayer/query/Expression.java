@@ -233,7 +233,7 @@ public class Expression {
     }
 
     /**
-     * Returns this expression rewritten in terms of the given value, which is simplified on the way. See
+     * Returns this expression rewritten in terms of the given value, simplifying both sides on the way. See
      * {@link #pullUpSimplified} for details.
      */
     @Nonnull
@@ -241,7 +241,9 @@ public class Expression {
                              @Nonnull Set<CorrelationIdentifier> constantAliases) {
         final AliasMap aliasMap = AliasMap.identitiesFor(value.getCorrelatedTo());
         final Value simplifiedValue = value.simplify(EvaluationContext.empty(), aliasMap, constantAliases);
-        return withUnderlying(pullUpSimplified(getUnderlying(), simplifiedValue, aliasMap, correlationIdentifier,
+        final Value simplifiedUnderlying =
+                getUnderlying().simplify(EvaluationContext.empty(), aliasMap, constantAliases);
+        return withUnderlying(pullUpSimplified(simplifiedUnderlying, simplifiedValue, aliasMap, correlationIdentifier,
                 constantAliases));
     }
 
@@ -257,14 +259,15 @@ public class Expression {
      * by a reference to the column that holds it, while the {@code + 1} is left alone because it has no counterpart on
      * the other side.
      *
-     * <p>The candidate has to arrive simplified, under the same {@code aliasMap} and {@code constantAliases} that are
-     * passed here. Simplification paves the way for the matching by performing certain canonicalization steps (such as
-     * collapsing a record constructor that effectively reconstructs a whole record to just that record), and the
-     * matching is structural, so a value that is canonicalized on one side but not on the other does not match at all.
+     * <p>Both given values should be in their simplified form, under the same {@code aliasMap} and
+     * {@code constantAliases} that are passed here. Simplification paves the way for the matching by performing certain
+     * canonicalization steps (such as collapsing a record constructor that effectively reconstructs a whole record to
+     * just that record). This matters because the matching is structural, so a value that is canonicalized on one side
+     * but not on the other would not necessarily match.
      *
      * <p>Neither value is modified; the result is a new value, or the given one in case nothing matched.
      *
-     * @param value the value to rewrite
+     * @param value the value to rewrite, simplified
      * @param simplifiedValue the candidate to express {@code value} in terms of, simplified
      * @param aliasMap the alias map of equalities to match under
      * @param correlationIdentifier the alias the resulting references are expressed over

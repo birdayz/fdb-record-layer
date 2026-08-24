@@ -86,7 +86,9 @@ public final class OrderByExpression {
                                 Stream.of(orderBy))
                 .map(orderBy -> {
                     final var orderByExpression = orderBy.getExpression();
-                    final var underlying = orderByExpression.getUnderlying();
+                    // Simplify this side as well, so that it meets the candidate in the same, canonical shape.
+                    final var underlying = orderByExpression.getUnderlying()
+                            .simplify(EvaluationContext.empty(), aliasMap, constantAliases);
                     final var pulledUpUnderlying = Assert.notNullUnchecked(underlying.replace(
                             subExpression -> {
                                 final var pulledUpExpressionMap =
