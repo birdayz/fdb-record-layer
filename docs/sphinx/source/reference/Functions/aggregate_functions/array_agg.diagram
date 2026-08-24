@@ -1,6 +1,10 @@
 Diagram(
     Terminal('ARRAY_AGG'),
     Terminal('('),
+    Optional(
+        Terminal('ALL'),
+        'skip'
+    ),
     NonTerminal('expression'),
     Optional(
         Sequence(

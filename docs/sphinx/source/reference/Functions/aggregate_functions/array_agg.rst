@@ -25,7 +25,7 @@ Parameters
     Causes ``NULL`` values of ``expression`` to be omitted from the resulting array.
 
 ``RESPECT NULLS``
-    Causes ``NULL`` values of ``expression`` to be collected as array elements. This is the default when no null-treatment clause is present.
+    Causes ``NULL`` values of ``expression`` to be collected as array elements. This is the default when no null-treatment clause is present. This behavior is subject to limitations; see the note on ``NULL`` handling under :ref:`Important Notes <array-agg-important-notes>`.
 
 Returns
 =======
@@ -59,7 +59,7 @@ For these examples, assume we have a ``sales`` table:
         PRIMARY KEY (id)
     )
 
-    CREATE INDEX product_idx AS SELECT product FROM sales ORDER BY product
+    CREATE INDEX product_idx ON sales(product)
 
     INSERT INTO sales VALUES
         (1, 'Widget', 'North', 100),
@@ -134,7 +134,21 @@ See :ref:`Unnesting <unnesting>` for the unnesting syntax used by the inner quer
 ARRAY_AGG() in a correlated subquery
 ------------------------------------
 
-To collect a per-parent array of related child values, use a correlated subquery in the ``FROM`` clause. For the following example, assume a ``parent`` table and a ``child`` table joined on ``pid``.
+To collect a per-parent array of related child values, use a correlated subquery in the ``FROM`` clause. For the following example, assume a ``parent`` table and a ``child`` table joined on ``pid``:
+
+.. code-block:: sql
+
+    CREATE TABLE parent (pid BIGINT, name STRING, PRIMARY KEY (pid))
+
+    CREATE TABLE child (cid BIGINT, pid BIGINT, val BIGINT, PRIMARY KEY (cid))
+
+    CREATE INDEX child_by_pid ON child(pid)
+
+    INSERT INTO parent VALUES (1, 'a'), (2, 'b'), (3, 'c')
+
+    INSERT INTO child VALUES (1, 1, 100), (2, 1, 200), (3, 2, 300), (4, 2, NULL)
+
+The following query collects the ``val`` values of the children of each parent.
 
 .. code-block:: sql
 
@@ -142,7 +156,19 @@ To collect a per-parent array of related child values, use a correlated subquery
       FROM parent p,
            (SELECT ARRAY_AGG(c.val IGNORE NULLS) AS vals FROM child c WHERE c.pid = p.pid) sq
 
-A parent with no matching child rows produces a ``NULL`` array for that row.
+.. list-table::
+    :header-rows: 1
+
+    * - :sql:`pid`
+      - :sql:`vals`
+    * - :json:`1`
+      - :json:`[100, 200]`
+    * - :json:`2`
+      - :json:`[300]`
+    * - :json:`3`
+      - :json:`null`
+
+Parent 2 has two children, but the ``NULL`` value of the second one is omitted, so its array has a single element. Parent 3 has no matching child rows at all, so its array is ``NULL`` rather than empty.
 
 .. _array-agg-important-notes:
 
@@ -151,8 +177,8 @@ Important notes
 
 * **Required indexes**: In general, ``GROUP BY`` queries require an appropriate index to be executed. See :ref:`Indexes <index_definition>` for details on creating indexes that support ``GROUP BY`` operations.
 * **ARRAY_AGG() in indexes**: ``ARRAY_AGG()`` itself cannot currently be materialized in an index. Defining an index over it, as in ``CREATE INDEX idx AS SELECT ARRAY_AGG(val) FROM tab GROUP BY grp``, raises an ``UNSUPPORTED_OPERATION`` error.
-* **Element order**: The order of the elements within the returned array is unspecified. Elements are collected in whatever order the rows are read in, which depends on the plan use to execute the query—in particular on which index is used, if any. You therefore cannot rely on the order.
+* **Element order**: The order of the elements within the returned array is unspecified. Elements are collected in whatever order the rows are read in, which depends on the plan used to execute the query—in particular on which index is used, if any. You therefore cannot rely on the order. There is currently no way to request a particular order, since an in-call ``ORDER BY`` clause is not supported yet. This limitation is tracked by `Issue #4498 <https://github.com/FoundationDB/fdb-record-layer/issues/4498>`_.
 * **NULL handling**: An array cannot currently hold ``NULL`` elements. This is due to a limitation at the level of the FDB Record Layer, tracked by `Issue #3646 <https://github.com/FoundationDB/fdb-record-layer/issues/3646>`_. A query that uses the default ``RESPECT NULLS`` behavior (including when no null-treatment clause is present) will fail at run time with an ``UNSUPPORTED_OPERATION`` error as soon as a ``NULL`` is encountered. To avoid this potential error, use ``IGNORE NULLS`` to omit ``NULL`` values from the array.
 * **Arrays of arrays**: An ``ARRAY``-typed argument would produce an array of arrays, which is not supported. ``ARRAY_AGG()`` over an ``ARRAY`` column raises an ``UNSUPPORTED_OPERATION`` error. This limitation is tracked by `Issue #4167 <https://github.com/FoundationDB/fdb-record-layer/issues/4167>`_. To collect nested collections, you can wrap the inner array in a struct, as in ``ARRAY_AGG((rid, tags))``.
-* **DISTINCT and ORDER BY**: These clauses are not supported yet. ``ARRAY_AGG(DISTINCT «expression» …)`` and ``ARRAY_AGG(«expression» ORDER BY …)`` both parse, but raise an ``UNSUPPORTED_QUERY`` error.
-* **Subqueries**: ``ARRAY_AGG()`` may be used in a correlated ``FROM``-clause subquery, as shown in `ARRAY_AGG in a correlated subquery`_ above, but not in a scalar subquery in the ``SELECT`` projection list. The latter, for example ``SELECT p.pid, (SELECT ARRAY_AGG(c.val IGNORE NULLS) FROM child c WHERE c.pid = p.pid) FROM parent p``, raises a ``SYNTAX_ERROR``. That is a general limitation of scalar subqueries in projections, not specific to ``ARRAY_AGG()``.
+* **DISTINCT**: The ``DISTINCT`` set quantifier is not supported yet. The parser accepts ``ARRAY_AGG(DISTINCT «expression» …)`` but raises an ``UNSUPPORTED_QUERY`` error. This limitation is tracked by `Issue #4499 <https://github.com/FoundationDB/fdb-record-layer/issues/4499>`_.
+* **Subqueries**: ``ARRAY_AGG()`` may be used in a correlated ``FROM``-clause subquery, as shown in `ARRAY_AGG() in a correlated subquery`_ above, but not in a scalar subquery in the ``SELECT`` projection list. The latter, for example ``SELECT p.pid, (SELECT ARRAY_AGG(c.val IGNORE NULLS) FROM child c WHERE c.pid = p.pid) FROM parent p``, raises a ``SYNTAX_ERROR``. That is a general limitation of scalar subqueries in projections, not specific to ``ARRAY_AGG()``.

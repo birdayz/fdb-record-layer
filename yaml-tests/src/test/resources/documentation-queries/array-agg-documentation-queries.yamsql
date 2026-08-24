@@ -23,16 +23,15 @@ options:
 # The `sales` table and its `product_idx` index are the ones shown in the ARRAY_AGG() documentation page. The index is
 # what allows the GROUP BY query below to be planned, since a streaming aggregation needs its input sorted on the
 # grouping column.
-# The `parent` and `child` tables back the “ARRAY_AGG() in a correlated subquery” section, which describes them in prose
-# rather than giving their DDL. The `doc_rev` table backs the “Arrays of arrays” note, whose examples use `rid` and
-# `tags`.
+# The `parent` and `child` tables back the “ARRAY_AGG() in a correlated subquery” section. The `doc_rev` table backs the
+# “Arrays of arrays” note, whose examples use `rid` and `tags`.
 schema_template:
     CREATE TABLE sales (id BIGINT, product STRING, region STRING, amount BIGINT, PRIMARY KEY (id))
-    CREATE INDEX product_idx AS SELECT product FROM sales ORDER BY product
+    CREATE INDEX product_idx ON sales(product)
 
     CREATE TABLE parent (pid BIGINT, name STRING, PRIMARY KEY (pid))
     CREATE TABLE child (cid BIGINT, pid BIGINT, val BIGINT, PRIMARY KEY (cid))
-    CREATE INDEX child_by_pid AS SELECT pid FROM child ORDER BY pid
+    CREATE INDEX child_by_pid ON child(pid)
 
     CREATE TABLE doc_rev (rid BIGINT, title STRING, tags STRING ARRAY, PRIMARY KEY (rid))
 ---
